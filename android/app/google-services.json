@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1012873371896",
+    "project_id": "makale-aab64",
+    "storage_bucket": "makale-aab64.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1012873371896:android:dedf958dd2a066db9f9b0d",
+        "android_client_info": {
+          "package_name": "com.detasoft.makale"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBRwyvE1EEfVT1PLOYOg49OWv5G8gsrzNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
