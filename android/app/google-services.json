@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1012873371896:android:dedf958dd2a066db9f9b0d",
+        "mobilesdk_app_id": "1:1012873371896:android:af46f874b0b6dd739f9b0d",
         "android_client_info": {
-          "package_name": "com.detasoft.makale"
+          "package_name": "com.detasoft.hkt"
         }
       },
       "oauth_client": [],

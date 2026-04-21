@@ -1,4 +1,4 @@
-package com.detasoft.makale
+package com.detasoft.hkt
 
 import io.flutter.embedding.android.FlutterActivity
 

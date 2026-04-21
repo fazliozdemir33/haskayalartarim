@@ -9,7 +9,10 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart' hide ImageSource;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart';
+import 'splash_screen.dart';
 
 // Theme Management
 class ThemeManager extends ChangeNotifier {
@@ -111,7 +114,7 @@ class _MakaleAppState extends State<MakaleApp> {
         ),
       ),
       themeMode: themeManager.themeMode,
-      home: const ArticleListScreen(),
+      home: const SplashScreen(nextScreen: ArticleListScreen()),
     );
   }
 }
@@ -216,6 +219,62 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
   String _selectedCategory = "Tümü";
   bool _isLoggedIn = false;
   String? _modalError;
+
+  void _launchWhatsApp() async {
+    final doc = await FirebaseFirestore.instance.collection('config').doc('whatsapp').get();
+    final data = doc.data() as Map<String, dynamic>?;
+    String number = '';
+    if (doc.exists && data != null) {
+      number = data['number'] ?? '';
+    }
+    
+    if (number.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('WhatsApp numarası ayarlanmamış.')));
+      return;
+    }
+    number = number.replaceAll(RegExp(r'[^0-9]'), '');
+    final uri = Uri.parse("https://wa.me/$number");
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('WhatsApp başlatılamadı.')));
+    }
+  }
+
+  void _showSettingsDialog() {
+    final controller = TextEditingController();
+    FirebaseFirestore.instance.collection('config').doc('whatsapp').get().then((doc) {
+      if (doc.exists) controller.text = doc.data()?['number'] ?? '';
+    });
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bCtx) => Container(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(bCtx).viewInsets.bottom, left: 24, right: 24, top: 24),
+        decoration: BoxDecoration(color: Theme.of(bCtx).scaffoldBackgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Sistem Ayarları', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            TextField(controller: controller, decoration: const InputDecoration(hintText: 'WhatsApp No (Örn: 905XXXXXXXXX)', prefixIcon: Icon(Icons.phone_android, color: Color(0xFF25D366)))),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () async {
+                await FirebaseFirestore.instance.collection('config').doc('whatsapp').set({'number': controller.text});
+                if (mounted) Navigator.pop(bCtx);
+              },
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: const Color(0xFF3A933F), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: const Text('Kaydet'),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -439,6 +498,12 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
     bool isAdmin = _role == 'admin';
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: _launchWhatsApp,
+        backgroundColor: const Color(0xFF25D366),
+        elevation: 4,
+        child: const Icon(Icons.chat, color: Colors.white, size: 32),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -455,6 +520,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                         onPressed: () => themeManager.toggleTheme(!isDark),
                       ),
                       if (isAdmin) ...[
+                        IconButton(icon: const Icon(Icons.settings_outlined, color: Color(0xFF3A933F)), onPressed: _showSettingsDialog),
                         IconButton(icon: const Icon(Icons.category_outlined, color: Color(0xFF3A933F)), onPressed: _showAddCategoryDialog),
                         IconButton(
                           icon: const Icon(Icons.add_circle_outline, color: Color(0xFF3A933F), size: 32),
@@ -556,7 +622,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                     itemBuilder: (c, i) {
                       final data = docs[i].data() as Map<String, dynamic>;
                       return GestureDetector(
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ArticleDetailScreen(title: data['title'], content: data['content'], imageUrl: data['imageUrl']))),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ArticleDetailScreen(docId: docs[i].id, title: data['title'], content: data['content'], imageUrl: data['imageUrl']))),
                         child: Container(
                           decoration: BoxDecoration(
                             color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
@@ -616,7 +682,19 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                                       const SizedBox(height: 4),
                                       Text(data['content'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[600], fontSize: 13)),
                                       const SizedBox(height: 8),
-                                      const Text('Daha fazla oku', style: TextStyle(color: Color(0xFF3A933F), fontWeight: FontWeight.bold, fontSize: 12)),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text('Daha fazla oku', style: TextStyle(color: Color(0xFF3A933F), fontWeight: FontWeight.bold, fontSize: 12)),
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 14),
+                                              const SizedBox(width: 4),
+                                              Text('${data['likes'] ?? 0}', style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[600], fontSize: 12, fontWeight: FontWeight.bold)),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -810,34 +888,154 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-class ArticleDetailScreen extends StatelessWidget {
+class ArticleDetailScreen extends StatefulWidget {
+  final String docId;
   final String? title;
   final String? content;
   final String? imageUrl;
-  const ArticleDetailScreen({super.key, this.title, this.content, this.imageUrl});
+  const ArticleDetailScreen({super.key, required this.docId, this.title, this.content, this.imageUrl});
+
+  @override
+  State<ArticleDetailScreen> createState() => _ArticleDetailScreenState();
+}
+
+class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
+  bool _isLiked = false;
+  int _likeCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLikeStatus();
+  }
+
+  void _checkLikeStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final liked = prefs.getBool('liked_${widget.docId}') ?? false;
+    
+    // Fetch latest like count from Firestore
+    final doc = await FirebaseFirestore.instance.collection('articles').doc(widget.docId).get();
+    if (mounted) {
+      setState(() {
+        _isLiked = liked;
+        _likeCount = doc.data()?['likes'] ?? 0;
+      });
+    }
+  }
+
+  void _toggleLike() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    try {
+      final docRef = FirebaseFirestore.instance.collection('articles').doc(widget.docId);
+      
+      if (_isLiked) {
+        // Unlike
+        await docRef.update({'likes': FieldValue.increment(-1)});
+        await prefs.setBool('liked_${widget.docId}', false);
+        if (mounted) {
+          setState(() {
+            _isLiked = false;
+            _likeCount--;
+          });
+        }
+      } else {
+        // Like
+        await docRef.update({'likes': FieldValue.increment(1)});
+        await prefs.setBool('liked_${widget.docId}', true);
+        if (mounted) {
+          setState(() {
+            _isLiked = true;
+            _likeCount++;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(elevation: 0, iconTheme: const IconThemeData(color: Color(0xFF3A933F))),
+      appBar: AppBar(
+        elevation: 0, 
+        iconTheme: const IconThemeData(color: Color(0xFF3A933F)),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _isLiked ? Colors.redAccent.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      color: _isLiked ? Colors.redAccent : (isDark ? Colors.grey[400] : Colors.grey[600]),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$_likeCount',
+                      style: TextStyle(
+                        color: _isLiked ? Colors.redAccent : (isDark ? Colors.grey[400] : Colors.grey[600]),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (imageUrl != null) ...[
+            if (widget.imageUrl != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Image.network(imageUrl!, width: double.infinity, height: 250, fit: BoxFit.cover, errorBuilder: (c, e, s) => const SizedBox()),
+                child: Image.network(widget.imageUrl!, width: double.infinity, height: 250, fit: BoxFit.cover, errorBuilder: (c, e, s) => const SizedBox()),
               ),
               const SizedBox(height: 24),
             ],
-            Text(title ?? '', style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.bold)),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: Text(widget.title ?? '', style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.bold))),
+                const SizedBox(width: 16),
+                GestureDetector(
+                  onTap: _toggleLike,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isLiked ? Colors.redAccent : (isDark ? Colors.white10 : Colors.grey[100]),
+                      shape: BoxShape.circle,
+                      boxShadow: _isLiked ? [BoxShadow(color: Colors.redAccent.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] : [],
+                    ),
+                    child: Icon(
+                      _isLiked ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
+                      color: _isLiked ? Colors.white : const Color(0xFF3A933F),
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Container(width: 60, height: 4, color: const Color(0xFF3A933F)),
             const SizedBox(height: 24),
-            HtmlWidget(content ?? '', textStyle: TextStyle(fontSize: 17, height: 1.6, color: isDark ? Colors.grey[300] : const Color(0xFF374151))),
+            HtmlWidget(widget.content ?? '', textStyle: TextStyle(fontSize: 17, height: 1.6, color: isDark ? Colors.grey[300] : const Color(0xFF374151))),
+            const SizedBox(height: 48),
           ],
         ),
       ),
@@ -915,6 +1113,7 @@ class _EditorScreenState extends State<EditorScreen> {
       };
       if (widget.docId == null) {
         data['createdAt'] = FieldValue.serverTimestamp();
+        data['likes'] = 0;
         await FirebaseFirestore.instance.collection('articles').add(data);
       } else {
         await FirebaseFirestore.instance.collection('articles').doc(widget.docId!).update(data);
